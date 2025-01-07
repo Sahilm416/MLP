@@ -136,7 +136,7 @@ export default function Results() {
   return (
     <div className="p-4 space-y-6">
       {/* Header */}
-      <div className="text-center">
+      <div className="text-start">
         <h1 className="text-2xl font-bold text-gray-900">Sentiment Analysis Results</h1>
         <p className="text-sm text-gray-600 mt-1">Analysis of your social media activity</p>
       </div>
