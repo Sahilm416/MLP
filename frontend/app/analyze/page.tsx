@@ -40,7 +40,7 @@ export default function Analyze() {
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-lg mx-auto px-4 py-12">
-        <div className="text-center mb-8">
+        <div className="text-start mb-8">
           <h1 className="text-2xl font-semibold text-gray-900">
             Profile Analysis
           </h1>
