@@ -7,7 +7,7 @@ import Navbar from "@/components/Navbar";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Marathi Language Processing",
+  title: "MLP - Marathi Language Processing",
   description:
     "Analyze Marathi social media content with our advanced sentiment analysis platform",
 };
