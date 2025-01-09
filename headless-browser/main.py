@@ -38,7 +38,7 @@ class FacebookScraper:
     async def initialize(self):
         self.playwright = await async_playwright().start()
         self.browser = await self.playwright.chromium.launch(
-            headless=False,
+            headless=True,
             args=[
                 '--disable-notifications',
                 '--disable-dev-shm-usage',
