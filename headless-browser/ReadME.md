@@ -1,1 +1,1 @@
-
+curl -X POST "http://localhost:8000/scrape-post" -H "Content-Type: application/json" -d '{"email": "your_facebook_email@example.com", "password": "your_facebook_password", "post_url": "https://www.facebook.com/some_post_url"}'
