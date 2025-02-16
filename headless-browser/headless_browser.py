@@ -1,12 +1,11 @@
-from modal import App, Image, Mount, web_endpoint
+from modal import App, Image, web_endpoint
+import modal
+import os
 from typing import Dict
-import pickle
-import re
-from fastapi import HTTPException
 import asyncio
 from datetime import datetime
 from playwright.async_api import async_playwright
-from datetime import datetime
+from fastapi import HTTPException
 
 playwright_image = Image.debian_slim(python_version="3.11").run_commands(
     "apt-get update",
@@ -20,11 +19,11 @@ playwright_image = Image.debian_slim(python_version="3.11").run_commands(
 
 app = App(name="Headless", image=playwright_image)
 
-@app.function(keep_warm=0)
+@app.function(secrets=[modal.Secret.from_name("Mega_Project")])
 @web_endpoint(label="scrape-facebook-post", method="POST")
 async def get_facebook_comments(credentials: Dict):
-    email = credentials.get("email")
-    password = credentials.get("password")
+    email = os.environ["email"]
+    password = os.environ["password"]
     post_url = credentials.get("post_url")
     
     if not email or not password or not post_url:
@@ -48,6 +47,7 @@ async def get_facebook_comments(credentials: Dict):
             await page.fill('#email', email)
             await page.fill('#pass', password)
             await page.click('button[name="login"]')
+            print("Login is successful")
             await page.wait_for_load_state('networkidle')
             await asyncio.sleep(2)
 
@@ -59,6 +59,7 @@ async def get_facebook_comments(credentials: Dict):
             await page.wait_for_load_state('networkidle')
             await asyncio.sleep(2)
 
+            # Extract post content
             post_data = await page.evaluate('''() => {
                 const postTexts = Array.from(document.querySelectorAll('div[dir="auto"]'))
                     .map(el => el.textContent.trim())
@@ -71,14 +72,16 @@ async def get_facebook_comments(credentials: Dict):
                     post_content: postContent,
                     post_url: window.location.href
                 };
-            }''')
+            }''') 
+            
+            # Step 3: Scrape unique comments and count duplicates
+            unique_comments = set()
+            comments=[]
+            total_comments = 0
+            duplicate_comments = 0
+            max_comments = 100
 
-            # Step 3: Scrape comments
-            comments = []
-            total_count = 0
-            max_comments = 10000
-
-            while total_count < max_comments:
+            while len(unique_comments) < max_comments:
                 more_buttons = await page.query_selector_all('div[role="button"]')
                 clicked = False
 
@@ -107,9 +110,7 @@ async def get_facebook_comments(credentials: Dict):
 
                             const content = contentElement.textContent.trim();
                             if (content) {
-                                comments.push({'comment': content});
-                            } else {
-                                comments.push({'comment': '[NON_TEXT_CONTENT]'});
+                                comments.push(content);
                             }
                         } catch (e) {
                             console.error('Error processing comment:', e);
@@ -119,12 +120,17 @@ async def get_facebook_comments(credentials: Dict):
                     return comments;
                 }''')
 
-                total_count += len(new_comments)
-                comments.extend(new_comments)
+                for comment in new_comments:
+                    total_comments += 1  # Count all comments
+                    if comment in unique_comments:
+                        duplicate_comments += 1  # Count duplicates
+                    else:
+                        unique_comments.add(comment)
+                        comments.append({"comment": comment})
 
-                if len(comments) >= max_comments:
+                if len(unique_comments) >= max_comments:
                     break
-
+                
             # Step 4: Format output
             formatted_data = {
                 'post': {
@@ -133,9 +139,11 @@ async def get_facebook_comments(credentials: Dict):
                 },
                 'comments': comments[:max_comments],
                 'metadata': {
-                    'total_comments': total_count,
+                    'total_comments': total_comments,
+                    'total_unique_comments': len(unique_comments),
+                    'duplicate_comments': duplicate_comments,
                     'scraped_at': datetime.now().isoformat(),
-                    'comment_limit_reached': len(comments) >= max_comments
+                    'comment_limit_reached': len(unique_comments) >= max_comments
                 }
             }
 
