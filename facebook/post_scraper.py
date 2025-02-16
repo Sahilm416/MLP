@@ -1,164 +1,191 @@
 import logging
-from modal import App, Image, Mount, web_endpoint
-from typing import Dict
-from fastapi import HTTPException
 import asyncio
 from datetime import datetime
-from playwright.async_api import async_playwright
+from typing import Dict
 
-# Configure logging
+from fastapi import HTTPException
+from playwright.async_api import async_playwright, TimeoutError
+from modal import App, Image, web_endpoint
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("post_scraper")
 
-# Build an image with the required dependencies
-playwright_image = Image.debian_slim(python_version="3.11").run_commands(
-    "apt-get update",
-    "apt-get install -y software-properties-common",
-    "apt-add-repository non-free",
-    "apt-add-repository contrib",
-    "pip install playwright==1.42.0",
-    "playwright install-deps chromium",
-    "playwright install chromium",
+playwright_image = (
+    Image.debian_slim()
+    .pip_install("playwright")
+    .run_commands("playwright install-deps", "playwright install")
 )
 
 app = App(name="Headless", image=playwright_image)
 
 @app.function(keep_warm=0)
 @web_endpoint(label="scrape-facebook-post", method="POST")
-async def get_facebook_comments(credentials: Dict):
-    email = credentials.get("email")
-    password = credentials.get("password")
+async def get_facebook_post(credentials: Dict):
     post_url = credentials.get("post_url")
-    
-    if not email or not password or not post_url:
-        logger.error("Missing required fields (email, password, post_url)")
-        return {"error": "Missing required fields (email, password, post_url)"}
+    if not post_url:
+        logger.error("Missing required field: post_url")
+        return {"error": "Missing required field: post_url"}
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(viewport={'width': 1920, 'height': 1080})
+        page = await context.new_page()
+
+        async def handle_dialog(dialog):
+            logger.info(f"Dismissing dialog: {dialog.message}")
+            await dialog.dismiss()
+        page.on("dialog", handle_dialog)
 
         try:
-            logger.info("Navigating to Facebook login page")
-            await page.goto('https://www.facebook.com/', timeout=60000)
-            try:
-                cookie_button = await page.query_selector('button[data-cookiebanner="accept_button"]')
-                if cookie_button:
-                    logger.info("Cookie banner found, clicking accept")
-                    await cookie_button.click()
-                    await asyncio.sleep(1)
-            except Exception as e:
-                logger.warning(f"Cookie banner not handled: {e}")
-
-            logger.info("Filling login credentials")
-            await page.fill('#email', email)
-            await page.fill('#pass', password)
-            await page.click('button[name="login"]')
-            await page.wait_for_load_state('networkidle', timeout=60000)
-            await asyncio.sleep(2)
-
-            logger.info(f"Current URL after login: {page.url}")
-            if 'checkpoint' in page.url or 'login' in page.url:
-                logger.error("Login failed; checkpoint encountered")
-                raise Exception('Login failed - Please check credentials or handle 2FA')
-            else:
-                logger.info("Login successful")
-
             logger.info(f"Navigating to post URL: {post_url}")
             await page.goto(post_url, timeout=60000)
-            await page.wait_for_load_state('networkidle', timeout=60000)
-            await page.wait_for_selector('div[data-ad-rendering-role="story_message"]', timeout=60000)
-            await asyncio.sleep(2)
+            await page.wait_for_load_state("networkidle", timeout=60000)
+            await asyncio.sleep(5)  # Increased initial wait time
 
-            logger.info("Extracting post content and image alt text")
+            if "login" in page.url:
+                logger.warning("Redirected to login page, navigating back")
+                await page.goBack()
+                await page.wait_for_load_state("networkidle", timeout=60000)
+                await asyncio.sleep(5)
+
+            await page.wait_for_selector('div[data-ad-rendering-role="story_message"]', timeout=60000)
+            await asyncio.sleep(3)
+            
+            # Extract post content
             post_data = await page.evaluate('''() => {
-                let postContent = "";
-                let postImageAlt = "";
                 const postElement = document.querySelector('div[data-ad-rendering-role="story_message"]');
-                if (postElement) {
-                    postContent = postElement.innerText.trim();
-                    // Gather alt text from all images inside the post element
-                    const images = postElement.querySelectorAll('img[alt]');
-                    if (images.length > 0) {
-                        postImageAlt = Array.from(images).map(img => img.alt).join(", ");
-                    }
-                }
                 return {
-                    post_content: postContent,
+                    post_content: postElement ? postElement.innerText.trim() : "",
                     post_url: window.location.href,
-                    post_image_alt: postImageAlt
+                    post_image_alt: Array.from(document.querySelectorAll('img[alt]'))
+                        .map(img => img.alt)
+                        .filter(alt => alt && alt.length > 10)
+                        .join(", ")
                 };
             }''')
-            logger.info(f"Post content (first 50 chars): {post_data['post_content'][:50]}...")
-            logger.info(f"Post image alt text: {post_data['post_image_alt']}")
 
-            # Step 3: Scrape comments (limit: 50)
             comments = []
-            total_count = 0
-            max_comments = 50
+            previous_count = 0
+            no_new_comments_counter = 0
+            max_attempts = 50
 
-            while total_count < max_comments:
-                logger.info("Scrolling to bottom to trigger dynamic loading")
-                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                await asyncio.sleep(2)
-
-                # Click "view more comments" or similar buttons if available
-                more_buttons = await page.query_selector_all('div[role="button"]')
-                clicked = False
-                for button in more_buttons:
+            while no_new_comments_counter < max_attempts:
+                # Click any "View more comments" or "See more" buttons first
+                for button_text in ["View more comments", "See more", "View previous comments", "View more replies"]:
                     try:
-                        text = await button.text_content()
-                        if text and ('view more comments' in text.lower() or 'previous comments' in text.lower()):
-                            logger.info("Clicking a 'view more comments' button")
+                        buttons = await page.query_selector_all(f'div[role="button"]:text-matches("{button_text}", "i")')
+                        for button in buttons:
                             await button.click()
-                            clicked = True
-                            await asyncio.sleep(2)
+                            await asyncio.sleep(3)  # Increased delay after button clicks
                     except Exception as e:
-                        logger.warning(f"Error clicking a button: {e}")
-                        continue
+                        logger.info(f"Button click attempt for '{button_text}': {e}")
 
-                logger.info("Extracting comments from rendered HTML")
+                # Scroll the comments section using the specific scrollbar element
+                scroll_result = await page.evaluate('''() => {
+                    const scrollbar = document.querySelector('div.x14nfmen.x1s85apg.x5yr21d.xds687c.xg01cxk.x10l6tqk.x13vifvy.x1wsgiic.x19991ni.xwji4o3.x1kky2od.x1sd63oq');
+                    if (scrollbar) {
+                        const parent = scrollbar.parentElement;
+                        if (parent) {
+                            const currentScroll = parent.scrollTop;
+                            parent.scrollTop = parent.scrollHeight;
+                            return {
+                                scrolled: currentScroll !== parent.scrollTop,
+                                currentScroll: parent.scrollTop,
+                                maxScroll: parent.scrollHeight
+                            };
+                        }
+                    }
+                    return null;
+                }''')
+                
+                if scroll_result:
+                    logger.info(f"Scroll position: {scroll_result}")
+                    # Increased delay after scrolling to ensure content loads
+                    await asyncio.sleep(5)
+                    
+                    # Wait for network activity to settle - Fixed the catch syntax
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=10000)
+                    except TimeoutError:
+                        logger.info("Network idle timeout reached")
+                    await asyncio.sleep(2)
+
+                # Rest of the code remains the same...
                 new_comments = await page.evaluate('''() => {
                     const comments = [];
+                    const seen = new Set();
+                    
                     const containers = document.querySelectorAll('div[role="article"]');
+                    
                     containers.forEach(container => {
-                        if(container.closest('div[data-ad-rendering-role="story_message"]')) return;
-                        const textElement = container.querySelector('div[dir="auto"][style*="text-align: start"]');
-                        if(textElement) {
-                            const commentText = textElement.innerText.trim();
-                            if(commentText) {
-                                comments.push({ 'comment': commentText });
+                        if (container.closest('div[data-ad-rendering-role="story_message"]')) return;
+                        
+                        const textSelectors = [
+                            'div[dir="auto"][style*="text-align: start"]',
+                            'div[data-ad-comet-preview="message"]',
+                            'div[data-ad-preview="message"]',
+                            'div.xdj266r',
+                            'div[style*="text-align: start"]'
+                        ];
+                        
+                        let commentText = '';
+                        for (const selector of textSelectors) {
+                            const element = container.querySelector(selector);
+                            if (element && element.textContent.trim()) {
+                                commentText = element.textContent.trim();
+                                break;
                             }
                         }
+                        
+                        if (!commentText || seen.has(commentText)) return;
+                        seen.add(commentText);
+                        
+                        const authorElement = container.querySelector('a[role="link"]:not([href*="reaction"]):not([href*="photo"])');
+                        const timestampElement = container.querySelector('a[role="link"][href*="comment"]');
+                        
+                        comments.push({
+                            'comment': commentText,
+                            'author': authorElement ? authorElement.textContent.trim() : '',
+                            'timestamp': timestampElement ? timestampElement.textContent.trim() : ''
+                        });
                     });
+                    
                     return comments;
                 }''')
-                logger.info(f"Found {len(new_comments)} new comments")
-                existing_comments = set(c['comment'] for c in comments)
-                filtered_new_comments = [c for c in new_comments if c['comment'] not in existing_comments]
-                logger.info(f"Filtered to {len(filtered_new_comments)} unique new comments")
-                total_count += len(filtered_new_comments)
-                comments.extend(filtered_new_comments)
 
-                if not clicked or len(filtered_new_comments) == 0:
-                    logger.info("No more new comments loaded; breaking out of loop")
-                    break
+                existing_comments = {(c['comment'], c.get('author', '')) for c in comments}
+                filtered_comments = [
+                    c for c in new_comments 
+                    if (c['comment'], c.get('author', '')) not in existing_comments
+                ]
 
-            logger.info(f"Total comments collected: {len(comments)}")
+                comments.extend(filtered_comments)
+                
+                logger.info(f"Total comments found: {len(comments)} (New in this iteration: {len(filtered_comments)})")
+                
+                if len(comments) == previous_count:
+                    no_new_comments_counter += 1
+                    if not scroll_result or not scroll_result.get('scrolled'):
+                        logger.info("No more scrolling possible")
+                        await asyncio.sleep(5)
+                        break
+                else:
+                    no_new_comments_counter = 0
+                    
+                previous_count = len(comments)
+                await asyncio.sleep(3)
 
-            # Step 4: Format and return output
             formatted_data = {
-                'post': {
-                    'content': post_data['post_content'],
-                    'url': post_data['post_url'],
-                    'image_alt': post_data['post_image_alt']
+                "post": {
+                    "content": post_data["post_content"],
+                    "url": post_data["post_url"],
+                    "image_alt": post_data["post_image_alt"],
                 },
-                'comments': comments[:max_comments],
-                'metadata': {
-                    'total_comments': total_count,
-                    'scraped_at': datetime.now().isoformat(),
-                    'comment_limit_reached': len(comments) >= max_comments
-                }
+                "comments": comments,
+                "metadata": {
+                    "total_comments": len(comments),
+                    "scraped_at": datetime.now().isoformat(),
+                },
             }
 
             logger.info("Scraping complete, closing browser")
