@@ -40,8 +40,45 @@ export const AnalyzeProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const [scrapedData, setScrapedData] = useState<ScrapedData | null>(null);
-  const [resultsData, setResultsData] = useState<ResultsData | null>(null);
+  const [scrapedData, setScrapedData] = useState<ScrapedData | null>({
+    comments: [{ comment: "This is a sample comment." }],
+    metadataL: {
+      total_comments: 1,
+      scraped_at: "2024-02-16T12:00:00Z",
+      comment_limit_reached: false,
+    },
+    post: {
+      content: "This is a sample post content.",
+      image_alt: "Sample image description.",
+      post_url: "https://example.com/sample-post",
+    },
+  });
+
+  const [resultsData, setResultsData] = useState<ResultsData | null>({
+    results: [
+      {
+        type: "post",
+        content: "This is a sample analysis result for the post.",
+        sentiment: "positive",
+        score: {
+          positive: 0.8,
+          negative: 0.1,
+          neutral: 0.1,
+        },
+      },
+      {
+        type: "comment",
+        content: "This is a sample analysis result for a comment.",
+        sentiment: "neutral",
+        score: {
+          positive: 0.3,
+          negative: 0.3,
+          neutral: 0.4,
+        },
+      },
+    ],
+  });
+
   return (
     <AnalyzeContext.Provider
       value={{
