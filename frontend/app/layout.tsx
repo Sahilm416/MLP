@@ -4,6 +4,7 @@ import "./globals.css";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { AnalyzeProvider } from "@/context/AnalyzeProvoder";
+import { Toaster } from 'sonner'
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -27,6 +28,7 @@ export default function RootLayout({
             <main className="flex-1 pt-[72px]">{children}</main>
             <Footer />
           </div>
+          <Toaster />
         </AnalyzeProvider>
       </body>
     </html>

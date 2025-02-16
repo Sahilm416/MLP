@@ -1,13 +1,25 @@
-"use client"
+"use client";
 import { useEffect, useState } from "react";
-import { Facebook, Twitter, ArrowRight, Loader2, Info, AlertCircle } from "lucide-react";
+import {
+  Facebook,
+  Twitter,
+  ArrowRight,
+  Loader2,
+  Info,
+  AlertCircle,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { AlertDialog, AlertDialogContent, AlertDialogDescription } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+} from "@/components/ui/alert-dialog";
 import {
   ResultsData,
   ScrapedData,
   useAnalyze,
 } from "@/context/AnalyzeProvoder";
+import { toast } from "sonner";
 
 interface FormData {
   postUrl: string;
@@ -47,13 +59,13 @@ export default function Analyze() {
 
   const router = useRouter();
 
-  const handlePlatformSelect = (platform: "facebook" | "twitter") => {
-    setFormData({ ...formData, platform, postUrl: "" });
-    setError(null);
-  };
+  // const handlePlatformSelect = (platform: "facebook" | "twitter") => {
+  //   setFormData({ ...formData, platform, postUrl: "" });
+  //   setError(null);
+  // };
 
   const analyzeSentiment = async (text: string): Promise<SentimentResponse> => {
-    const sentimentEndpoint = "https://sohel1807--sentiment-analysis.modal.run/";
+    const sentimentEndpoint = process.env.NEXT_PUBLIC_SENTIMENT_ANALYSIS_ENDPOINT!;
     const response = await fetch(sentimentEndpoint, {
       method: "POST",
       headers: {
@@ -63,6 +75,7 @@ export default function Analyze() {
     });
 
     if (!response.ok) {
+      toast.error(`Sentiment analysis failed!`);
       throw new Error(`Sentiment analysis failed: ${response.statusText}`);
     }
 
@@ -80,14 +93,16 @@ export default function Analyze() {
       }
 
       // Validate URL format
-      if (!formData.postUrl.includes(formData.platform)) {
+      if (!formData.postUrl.startsWith("https://www.facebook.com/share/p/")) {
+        toast.error(`Please enter a valid ${formData.platform} URL`);
         throw new Error(`Please enter a valid ${formData.platform} URL`);
       }
 
       // Scraping endpoint configuration
-      const scrapeEndpoint = formData.platform === "facebook" 
-        ? process.env.NEXT_PUBLIC_FACEBOOK_SCRAPER!
-        : process.env.NEXT_PUBLIC_TWITTER_SCRAPER!;
+      const scrapeEndpoint =
+        formData.platform === "facebook"
+          ? process.env.NEXT_PUBLIC_FACEBOOK_SCRAPER!
+          : process.env.NEXT_PUBLIC_TWITTER_SCRAPER!;
 
       const payload = {
         post_url: formData.postUrl,
@@ -106,26 +121,33 @@ export default function Analyze() {
 
       if (!scrapeResponse.ok) {
         const errorData = await scrapeResponse.json();
-        throw new Error(errorData.detail || `Failed to scrape post: ${scrapeResponse.statusText}`);
+        toast.error(errorData.detail || `Failed to scrape post!`);
+        throw new Error(
+          errorData.detail ||
+            `Failed to scrape post: ${scrapeResponse.statusText}`
+        );
       }
 
-      const scrapedData = await scrapeResponse.json() as ScrapedData;
-      
+      const scrapedData = (await scrapeResponse.json()) as ScrapedData;
+
       // Analyze post sentiment
       const postSentiment = await analyzeSentiment(scrapedData.post.content);
-      
-      const initialResults: AnalysisResult[] = [{
-        type: "post",
-        content: scrapedData.post.content,
-        sentiment: postSentiment.Sentiment_Analysis,
-        score: {
-          positive: postSentiment.predicted_probabilities.Positive,
-          negative: postSentiment.predicted_probabilities.Negative,
-          neutral: postSentiment.predicted_probabilities.Neutral,
+
+      const initialResults: AnalysisResult[] = [
+        {
+          type: "post",
+          content: scrapedData.post.content,
+          sentiment: postSentiment.Sentiment_Analysis,
+          score: {
+            positive: postSentiment.predicted_probabilities.Positive,
+            negative: postSentiment.predicted_probabilities.Negative,
+            neutral: postSentiment.predicted_probabilities.Neutral,
+          },
         },
-      }];
+      ];
 
       // Analyze comments in batches of 5 to prevent rate limiting
+      toast.info(`Analyzing comments...`);
       const commentResults: AnalysisResult[] = [];
       for (let i = 0; i < scrapedData.comments.length; i += 5) {
         const batch = scrapedData.comments.slice(i, i + 5);
@@ -144,12 +166,15 @@ export default function Analyze() {
                 },
               };
             } catch (error) {
+              toast.warning(`Failed to analyze one comment!`);
               console.error(`Error analyzing comment: ${error}`);
               return null;
             }
           })
         );
-        commentResults.push(...batchResults.filter(Boolean) as AnalysisResult[]);
+        commentResults.push(
+          ...(batchResults.filter(Boolean) as AnalysisResult[])
+        );
       }
 
       // Update state with results
@@ -159,9 +184,11 @@ export default function Analyze() {
       });
 
       // Navigate to results page
-      router.push('/results');
+      router.push("/results");
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+      setError(
+        error instanceof Error ? error.message : "An unexpected error occurred"
+      );
       console.error("Analysis error:", error);
     } finally {
       setLoading(false);
@@ -173,50 +200,28 @@ export default function Analyze() {
       <div className="max-w-lg mx-auto px-4 py-12">
         <div className="text-start mb-8">
           <h1 className="text-2xl font-semibold text-gray-900">
-            Profile Analysis
+            Post Sentiment Analysis
           </h1>
           <p className="mt-2 text-sm text-gray-600">
-            Analyze any social media profile in seconds
+            Analyze any marathi social media post in seconds
           </p>
         </div>
 
-        {error && (
-          <AlertDialog>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDialogDescription>{error}</AlertDialogDescription>
-          </AlertDialog>
-        )}
+        {/* <AlertDialog open={Boolean(error)}>
+          <AlertDialogContent>
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              <div className="flex-1">
+                <AlertDialogDescription className="text-sm text-gray-600">
+                  {error}
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogContent>
+        </AlertDialog> */}
 
         <div className="bg-white rounded-lg border shadow-sm p-6 mb-6">
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              Select Platform
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handlePlatformSelect("facebook")}
-                className={`flex items-center justify-center gap-2 p-3 rounded-md border transition-colors ${
-                  formData.platform === "facebook"
-                    ? "border-blue-500 bg-blue-50 text-blue-600"
-                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
-                type="button"
-              >
-                <Facebook className="w-5 h-5" />
-                <span className="font-medium">Facebook</span>
-              </button>
-
-              <button
-                disabled
-                onClick={() => handlePlatformSelect("twitter")}
-                className="flex items-center justify-center gap-2 p-3 rounded-md border transition-colors border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                type="button"
-              >
-                <Twitter className="w-5 h-5" />
-                <span className="font-medium">Twitter</span>
-              </button>
-            </div>
-          </div>
+          {/* Platform selection buttons removed as per your code */}
 
           <form onSubmit={handleUrlSubmit} className="space-y-6">
             <div>
@@ -227,9 +232,10 @@ export default function Analyze() {
                 Post URL
               </label>
               <input
+                disabled={loading}
                 id="profile-url"
                 type="url"
-                placeholder="https://facebook.com/..."
+                placeholder="https://www.facebook.com/share/p"
                 value={formData.postUrl}
                 onChange={(e) =>
                   setFormData({ ...formData, postUrl: e.target.value })

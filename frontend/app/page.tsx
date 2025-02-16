@@ -47,7 +47,7 @@ export default function Home() {
                 <BarChart3 className="w-6 h-6 text-blue-600" />
               </div>
               <h3 className="font-semibold text-gray-900 mb-2">Social Media Analysis</h3>
-              <p className="text-gray-600 leading-relaxed">Analyze Facebook and Twitter profiles in Marathi</p>
+              <p className="text-gray-600 leading-relaxed">Analyze facebook posts in Marathi</p>
             </div>
 
             <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-50 to-white border border-blue-100/80 hover:border-blue-200 transition-colors">
