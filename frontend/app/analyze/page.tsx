@@ -1,40 +1,171 @@
-"use client";
-
-import { useState } from "react";
-import { Facebook, Twitter, ArrowRight, Loader2, Info } from "lucide-react";
+"use client"
+import { useEffect, useState } from "react";
+import { Facebook, Twitter, ArrowRight, Loader2, Info, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { AlertDialog, AlertDialogContent, AlertDialogDescription } from "@/components/ui/alert-dialog";
+import {
+  ResultsData,
+  ScrapedData,
+  useAnalyze,
+} from "@/context/AnalyzeProvoder";
 
 interface FormData {
-  profileUrl: string;
+  postUrl: string;
   platform: "facebook" | "twitter" | null;
 }
 
+interface AnalysisResult {
+  type: "post" | "comment";
+  content: string;
+  sentiment: string;
+  score: {
+    positive: number;
+    negative: number;
+    neutral: number;
+  };
+}
+
+interface SentimentResponse {
+  Sentiment_Analysis: string;
+  cleaned_tweet: string;
+  original_tweet: string;
+  predicted_probabilities: {
+    Negative: number;
+    Positive: number;
+    Neutral: number;
+  };
+}
+
 export default function Analyze() {
+  const { setScrapedData, setResultsData, scrapedData } = useAnalyze();
   const [formData, setFormData] = useState<FormData>({
-    profileUrl: "",
+    postUrl: "",
     platform: "facebook",
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const router = useRouter();
 
   const handlePlatformSelect = (platform: "facebook" | "twitter") => {
-    setFormData({ ...formData, platform, profileUrl: "" });
+    setFormData({ ...formData, platform, postUrl: "" });
+    setError(null);
+  };
+
+  const analyzeSentiment = async (text: string): Promise<SentimentResponse> => {
+    const sentimentEndpoint = "https://sohel1807--sentiment-analysis.modal.run/";
+    const response = await fetch(sentimentEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ tweet: text }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Sentiment analysis failed: ${response.statusText}`);
+    }
+
+    return response.json();
   };
 
   const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle form submission
+    setError(null);
     setLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    setLoading(false);
-    router.push(`/results`);
-  };
 
-  const getPlaceholder = () => {
-    if (formData.platform === "facebook") {
-      return "https://facebook.com/username";
+    try {
+      if (!formData.platform) {
+        throw new Error("Please select a platform");
+      }
+
+      // Validate URL format
+      if (!formData.postUrl.includes(formData.platform)) {
+        throw new Error(`Please enter a valid ${formData.platform} URL`);
+      }
+
+      // Scraping endpoint configuration
+      const scrapeEndpoint = formData.platform === "facebook" 
+        ? process.env.NEXT_PUBLIC_FACEBOOK_SCRAPER!
+        : process.env.NEXT_PUBLIC_TWITTER_SCRAPER!;
+
+      const payload = {
+        post_url: formData.postUrl,
+        ...(formData.platform === "facebook" && {
+          email: process.env.NEXT_PUBLIC_FACEBOOK_EMAIL,
+          password: process.env.NEXT_PUBLIC_FACEBOOK_PASSWORD,
+        }),
+      };
+
+      // Fetch scraped data
+      const scrapeResponse = await fetch(scrapeEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!scrapeResponse.ok) {
+        const errorData = await scrapeResponse.json();
+        throw new Error(errorData.detail || `Failed to scrape post: ${scrapeResponse.statusText}`);
+      }
+
+      const scrapedData = await scrapeResponse.json() as ScrapedData;
+      
+      // Analyze post sentiment
+      const postSentiment = await analyzeSentiment(scrapedData.post.content);
+      
+      const initialResults: AnalysisResult[] = [{
+        type: "post",
+        content: scrapedData.post.content,
+        sentiment: postSentiment.Sentiment_Analysis,
+        score: {
+          positive: postSentiment.predicted_probabilities.Positive,
+          negative: postSentiment.predicted_probabilities.Negative,
+          neutral: postSentiment.predicted_probabilities.Neutral,
+        },
+      }];
+
+      // Analyze comments in batches of 5 to prevent rate limiting
+      const commentResults: AnalysisResult[] = [];
+      for (let i = 0; i < scrapedData.comments.length; i += 5) {
+        const batch = scrapedData.comments.slice(i, i + 5);
+        const batchResults = await Promise.all(
+          batch.map(async (comment) => {
+            try {
+              const sentiment = await analyzeSentiment(comment.comment);
+              return {
+                type: "comment" as const,
+                content: comment.comment,
+                sentiment: sentiment.Sentiment_Analysis,
+                score: {
+                  positive: sentiment.predicted_probabilities.Positive,
+                  negative: sentiment.predicted_probabilities.Negative,
+                  neutral: sentiment.predicted_probabilities.Neutral,
+                },
+              };
+            } catch (error) {
+              console.error(`Error analyzing comment: ${error}`);
+              return null;
+            }
+          })
+        );
+        commentResults.push(...batchResults.filter(Boolean) as AnalysisResult[]);
+      }
+
+      // Update state with results
+      setScrapedData(scrapedData);
+      setResultsData({
+        results: [...initialResults, ...commentResults],
+      });
+
+      // Navigate to results page
+      router.push('/results');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'An unexpected error occurred');
+      console.error("Analysis error:", error);
+    } finally {
+      setLoading(false);
     }
-    return "https://twitter.com/username";
   };
 
   return (
@@ -49,8 +180,14 @@ export default function Analyze() {
           </p>
         </div>
 
+        {error && (
+          <AlertDialog>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDialogDescription>{error}</AlertDialogDescription>
+          </AlertDialog>
+        )}
+
         <div className="bg-white rounded-lg border shadow-sm p-6 mb-6">
-          {/* Platform Selection */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-3">
               Select Platform
@@ -63,18 +200,17 @@ export default function Analyze() {
                     ? "border-blue-500 bg-blue-50 text-blue-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
+                type="button"
               >
                 <Facebook className="w-5 h-5" />
                 <span className="font-medium">Facebook</span>
               </button>
 
               <button
+                disabled
                 onClick={() => handlePlatformSelect("twitter")}
-                className={`flex items-center justify-center gap-2 p-3 rounded-md border transition-colors ${
-                  formData.platform === "twitter"
-                    ? "border-blue-500 bg-blue-50 text-blue-600"
-                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                }`}
+                className="flex items-center justify-center gap-2 p-3 rounded-md border transition-colors border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                type="button"
               >
                 <Twitter className="w-5 h-5" />
                 <span className="font-medium">Twitter</span>
@@ -82,28 +218,25 @@ export default function Analyze() {
             </div>
           </div>
 
-          {/* Profile URL Form */}
           <form onSubmit={handleUrlSubmit} className="space-y-6">
             <div>
               <label
                 htmlFor="profile-url"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Profile URL
+                Post URL
               </label>
-              <div className="relative">
-                <input
-                  id="profile-url"
-                  type="url"
-                  placeholder={getPlaceholder()}
-                  value={formData.profileUrl}
-                  onChange={(e) =>
-                    setFormData({ ...formData, profileUrl: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  required
-                />
-              </div>
+              <input
+                id="profile-url"
+                type="url"
+                placeholder="https://facebook.com/..."
+                value={formData.postUrl}
+                onChange={(e) =>
+                  setFormData({ ...formData, postUrl: e.target.value })
+                }
+                className="w-full px-3 py-2 border rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                required
+              />
             </div>
 
             <button
@@ -118,7 +251,7 @@ export default function Analyze() {
                 </>
               ) : (
                 <>
-                  Analyze Profile
+                  Analyze Post
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -126,7 +259,6 @@ export default function Analyze() {
           </form>
         </div>
 
-        {/* What are we doing section */}
         <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
           <div className="flex items-start gap-3">
             <Info className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
@@ -135,7 +267,7 @@ export default function Analyze() {
                 What are we doing?
               </h3>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>• Analyzing sentiment patterns in user posts</li>
+                <li>• Analyzing sentiment patterns in posts and comments</li>
                 <li>• Measuring emotional impact and engagement</li>
                 <li>• Understanding audience reactions</li>
               </ul>
