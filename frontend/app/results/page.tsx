@@ -26,6 +26,7 @@ export default function Results() {
   useEffect(() => {
     const fetchAIInsights = async () => {
       try {
+        setAiInsights(null);
         const response = await fetch(`/api/insights`, {
           method: "POST",
           body: JSON.stringify({
@@ -117,22 +118,17 @@ export default function Results() {
               {/* Main Sentiment Card */}
               <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
                 <h3 className="text-lg font-semibold mb-2">
-                  Overall Sentiment
+                  Negative Feedback
                 </h3>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-3xl font-bold mb-1">
                       {stats.distribution.negative}%
                     </p>
-                    <p className="text-sm text-blue-100">Negative Feedback</p>
+                    {/* <p className="text-sm text-blue-100">Negative Feedback</p> */}
                   </div>
                   <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center">
-                    {stats.distribution.positive >
-                    stats.distribution.negative ? (
-                      <ThumbsUp className="w-8 h-8 text-white" />
-                    ) : (
-                      <ThumbsDown className="w-8 h-8 text-white" />
-                    )}
+                    <ThumbsDown className="w-8 h-8 text-white" />
                   </div>
                 </div>
               </div>
@@ -314,7 +310,7 @@ export default function Results() {
                   </CardContent>
                 </Card>
               ) : (
-                <Skeleton className="w-full h-full" />
+                <Skeleton className="w-full rounded-lg h-[600px]" />
               )}
             </TabsContent>
           </Tabs>

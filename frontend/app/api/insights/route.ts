@@ -29,7 +29,9 @@ export const POST = async (req: NextRequest) => {
     Do not include any other text than the summary.
     Only use Marathi, No other language. DO NOT USE ENGLISH. DO NOT ADD RESPONSE HEADERS LIKE "Here is the summary"
     Format your response in markdown in following format:
-    General Summary -> What are most of the comments about? -> conclusion.
+    first talk about the post in general.
+    then talk about the comments in general.
+    then give your conclusion.
     Remember to respond in Marathi only.
     `,
     messages: [
