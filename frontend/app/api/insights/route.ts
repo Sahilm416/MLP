@@ -10,47 +10,34 @@ export const POST = async (req: NextRequest) => {
       negative: string;
       neutral: string;
     };
-    post: {
-      content: string;
+    comments: {
+      comment: string;
       sentiment: string;
-    };
+      author: string;
+    }[];
   };
 
   console.log(data);
 
   const { text } = await generateText({
-    model: groq("llama-3.1-8b-instant"),
+    model: groq("llama-3.3-70b-versatile"),
     system: `
-    You are an analytical assistant tasked with providing a comprehensive analysis of the sentiment of a post and its associated comment sentiments. You are provided with:
-    - The post's content and its overall sentiment.
-    - The distribution of comments across three sentiment categories: positive, negative, and neutral (provided as percentages).
-
-    In your analysis, please:
-    - Present a detailed overview of the post sentiment and the comment sentiment distribution.
-    - Explain the possible reasons behind the given post sentiment.
-    - Compare and contrast the post sentiment with the comment sentiments, highlighting any discrepancies or alignments.
-    - Offer solid reasons and observations based on the provided data.
-    - Format your response in markdown.
-    - Use only the English language without any additional headers or footers.
-
-    USE ONLY ENGLISH LANGUAGE FOR YOUR RESPONSE.
+    You are an ai facebook post analysis assistant. 
+    You will be given post comments and the overall sentiment of the post comments.
+    Your job is to analyze the post comments and provide a summary of the post comments.
+    Be detailed and to the point.
+    Do not include any other text than the summary.
+    Only use Marathi, No other language. DO NOT USE ENGLISH. DO NOT ADD RESPONSE HEADERS LIKE "Here is the summary"
+    Format your response in markdown in following format:
+    General Summary -> What are most of the comments about? -> conclusion.
+    Remember to respond in Marathi only.
     `,
     messages: [
       {
         role: "user",
         content: `
-               ## Post Content:
-               ${data.post.content}
-               
-               -----------------------
-               
-               ## Post Sentiment:
-               ${data.post.sentiment}
-               
-               -----------------------
-               
-               ## Comment Sentiment Distribution:
-               ${JSON.stringify(data.distribution)}
+               Post Sentiments: ${JSON.stringify(data.distribution)}
+               Comments: ${JSON.stringify(data.comments)}
             `,
       },
     ],

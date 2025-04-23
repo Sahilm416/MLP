@@ -21,7 +21,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className + " bg-white"}>
+      <body suppressHydrationWarning className={inter.className + " bg-white"}>
         <AnalyzeProvider>
           <div className="min-h-screen flex flex-col bg-white w-full max-w-md mx-auto">
             <Navbar />

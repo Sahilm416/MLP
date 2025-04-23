@@ -1,325 +1,325 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useMemo, useEffect, useState, useRef } from "react";
 import {
-  BarChart3,
-  TrendingUp,
   MessageCircle,
-  ThumbsUp,
-  Share2,
   Smile,
   Meh,
   Frown,
-  ChevronDown,
-  ChevronUp,
   Loader2,
+  ThumbsUp,
+  ThumbsDown,
+  Scale,
 } from "lucide-react";
 import { useAnalyze } from "@/context/AnalyzeProvoder";
-import { toast } from "sonner";
+import { FacebookEmbed } from "react-social-media-embed";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { Markdown } from "./_components/markdown";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Results() {
-  const { scrapedData, resultsData } = useAnalyze();
   const [aiInsights, setAiInsights] = useState<string | null>(null);
-  const [insightLoading, setInsightLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "posts" | "AI Insights"
-  >("overview");
-  const [expandedPosts, setExpandedPosts] = useState<number[]>([]);
+  const [currentTab, setCurrentTab] = useState<"post" | "comments" | "ai">(
+    "post"
+  );
 
-  // Calculate aggregated statistics
+  useEffect(() => {
+    const fetchAIInsights = async () => {
+      try {
+        const response = await fetch(`/api/insights`, {
+          method: "POST",
+          body: JSON.stringify({
+            distribution: {
+              positive: stats?.distribution.positive,
+              neutral: stats?.distribution.neutral,
+              negative: stats?.distribution.negative,
+            },
+            comments: scrapedData,
+          }),
+        });
+        const data = await response.json();
+        setAiInsights(data.text);
+      } catch (error) {}
+    };
+    currentTab === "ai" &&
+      stats &&
+      scrapedData &&
+      !aiInsights &&
+      fetchAIInsights();
+  }, [currentTab]);
+
+  const { scrapedData, postUrl } = useAnalyze();
+  // Calculate stats once
   const stats = useMemo(() => {
-    if (!resultsData?.results) return null;
+    if (!scrapedData) return null;
 
-    const total = resultsData.results.length;
-    const positive = resultsData.results.filter(
-      (r) => r.sentiment === "Positive"
+    const total = scrapedData.length;
+    const positive = scrapedData.filter(
+      (c) => c.sentiment === "Positive"
     ).length;
-    const negative = resultsData.results.filter(
-      (r) => r.sentiment === "Negative"
+    const negative = scrapedData.filter(
+      (c) => c.sentiment === "Negative"
     ).length;
-    const neutral = resultsData.results.filter(
-      (r) => r.sentiment === "Neutral"
-    ).length;
+    const neutral = scrapedData.filter((c) => c.sentiment === "Neutral").length;
+    const avgConfidence = Math.round(
+      (scrapedData.reduce((acc, curr) => acc + curr.confidence, 0) / total) *
+        100
+    );
 
     return {
-      totalPosts: scrapedData ? 1 : 0, // Main post
-      totalComments: scrapedData?.comments?.length || 0,
-      sentimentDistribution: {
+      total,
+      positive,
+      negative,
+      neutral,
+      avgConfidence,
+      distribution: {
         positive: Math.round((positive / total) * 100),
         negative: Math.round((negative / total) * 100),
         neutral: Math.round((neutral / total) * 100),
       },
-      overallScore: positive / total,
     };
-  }, [resultsData, scrapedData]);
+  }, [scrapedData]);
 
-  const getSentimentIcon = (sentiment: string) => {
-    switch (sentiment.toLowerCase()) {
-      case "positive":
-        return <Smile className="w-5 h-5 text-green-500" />;
-      case "neutral":
-        return <Meh className="w-5 h-5 text-yellow-500" />;
-      case "negative":
-        return <Frown className="w-5 h-5 text-red-500" />;
-      default:
-        return null;
-    }
-  };
-
-  const togglePostExpansion = (postId: number) => {
-    setExpandedPosts((prev) =>
-      prev.includes(postId)
-        ? prev.filter((id) => id !== postId)
-        : [...prev, postId]
-    );
-  };
-
-  const getSentimentColor = (score: number) => {
-    if (score >= 0.6) return "text-green-500";
-    if (score >= 0.4) return "text-yellow-500";
-    return "text-red-500";
-  };
-
-  if (!scrapedData || !resultsData || !stats) {
+  if (!scrapedData || !stats) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading analysis results...</p>
+        </div>
       </div>
     );
   }
 
-  const handleFetchAIInsights = async () => {
-    setInsightLoading(true);
-    try {
-      const res = await fetch("/api/insights", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          post: {
-            content: scrapedData?.post?.content || "",
-            sentiment: resultsData.results[0].sentiment || "",
-          },
-          distribution: {
-            positive: stats.sentimentDistribution.positive,
-            negative: stats.sentimentDistribution.negative,
-            neutral: stats.sentimentDistribution.neutral,
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        toast.error("Failed to fetch AI insights");
-      } else {
-        const data = await res.json();
-        setAiInsights(data.text);
-      }
-    } catch {
-      toast.error("Failed to fetch AI insights");
-    } finally {
-      setInsightLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === "AI Insights" && !aiInsights) {
-      handleFetchAIInsights();
-    }
-  }, [activeTab]);
-
   return (
-    <div className="p-4 space-y-6">
-      {/* Header */}
-      <div className="text-start">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Sentiment Analysis Results
-        </h1>
-        <p className="text-sm text-gray-600 mt-1">
-          Analysis of your social media post and comments
-        </p>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-md mx-auto">
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
+          <h1 className="text-xl font-bold text-gray-900 mb-4">
+            Sentiment Analysis
+          </h1>
 
-      {/* Tab Navigation */}
-      <div className="flex gap-2 border-b">
-        <button
-          onClick={() => setActiveTab("overview")}
-          className={`px-4 py-2 font-medium text-sm transition-colors ${
-            activeTab === "overview"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-600 hover:text-blue-600"
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          onClick={() => setActiveTab("posts")}
-          className={`px-4 py-2 font-medium text-sm transition-colors ${
-            activeTab === "posts"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-600 hover:text-blue-600"
-          }`}
-        >
-          Comments Analysis
-        </button>
-        <button
-          onClick={() => setActiveTab("AI Insights")}
-          className={`px-4 py-2 font-medium text-sm transition-colors ${
-            activeTab === "AI Insights"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-600 hover:text-blue-600"
-          }`}
-        >
-          AI Insights
-        </button>
-      </div>
+          <Tabs
+            value={currentTab}
+            onValueChange={(value) =>
+              setCurrentTab(value as "post" | "comments" | "ai")
+            }
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="post">Post</TabsTrigger>
+              <TabsTrigger value="comments">Comments</TabsTrigger>
+              <TabsTrigger value="ai">AI Analysis</TabsTrigger>
+            </TabsList>
 
-      {activeTab === "overview" ? (
-        <div className="space-y-6">
-          {/* Overall Sentiment Card */}
-          <div className="bg-gradient-to-br from-blue-50 to-white p-4 rounded-xl border border-blue-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Overall Sentiment</h3>
-              <span className="text-sm text-blue-600 font-medium">
-                {Math.round(stats.overallScore * 100)}% Positive
-              </span>
-            </div>
-            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-600 rounded-full"
-                style={{ width: `${stats.overallScore * 100}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white p-4 rounded-xl border">
-              <div className="flex items-center gap-2 mb-2">
-                <BarChart3 className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-medium text-gray-600">
-                  Main Post
-                </span>
+            {/* Post Stats Tab */}
+            <TabsContent value="post" className="mt-4 space-y-4 pb-20">
+              {/* Main Sentiment Card */}
+              <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
+                <h3 className="text-lg font-semibold mb-2">
+                  Overall Sentiment
+                </h3>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-3xl font-bold mb-1">
+                      {stats.distribution.negative}%
+                    </p>
+                    <p className="text-sm text-blue-100">Negative Feedback</p>
+                  </div>
+                  <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center">
+                    {stats.distribution.positive >
+                    stats.distribution.negative ? (
+                      <ThumbsUp className="w-8 h-8 text-white" />
+                    ) : (
+                      <ThumbsDown className="w-8 h-8 text-white" />
+                    )}
+                  </div>
+                </div>
               </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {stats.totalPosts}
-              </p>
-            </div>
-            <div className="bg-white p-4 rounded-xl border">
-              <div className="flex items-center gap-2 mb-2">
-                <MessageCircle className="w-5 h-5 text-blue-600" />
-                <span className="text-sm font-medium text-gray-600">
-                  Comments
-                </span>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">
-                {stats.totalComments}
-              </p>
-            </div>
-          </div>
 
-          {/* Sentiment Distribution */}
-          <div className="bg-white p-4 rounded-xl border">
-            <h3 className="font-semibold text-gray-900 mb-4">
-              Sentiment Distribution
-            </h3>
-            <div className="space-y-3">
-              {Object.entries(stats.sentimentDistribution).map(
-                ([sentiment, percentage]) => (
-                  <div key={sentiment} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="capitalize text-gray-600">
-                        {sentiment}
-                      </span>
-                      <span className="font-medium text-gray-900">
-                        {percentage}%
-                      </span>
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl p-4 shadow-sm border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <MessageCircle className="w-5 h-5 text-blue-500" />
+                    <span className="text-sm text-gray-600">Total</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {stats.total}
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-xl p-4 shadow-sm border">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Scale className="w-5 h-5 text-blue-500" />
+                    <span className="text-sm text-gray-600">Confidence</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {stats.avgConfidence}%
+                  </p>
+                </div>
+              </div>
+
+              {/* Sentiment Breakdown */}
+              <div className="bg-white rounded-xl p-4 shadow-sm border">
+                <h3 className="font-semibold text-gray-900 mb-4">
+                  Sentiment Breakdown
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                      <Smile className="w-5 h-5 text-green-600" />
                     </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          sentiment === "positive"
-                            ? "bg-green-500"
-                            : sentiment === "neutral"
-                            ? "bg-yellow-500"
-                            : "bg-red-500"
-                        }`}
-                        style={{ width: `${percentage}%` }}
-                      />
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-600">
+                          Positive
+                        </span>
+                        <span className="text-sm font-medium text-green-600">
+                          {stats.positive}
+                        </span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full">
+                        <div
+                          className="h-full bg-green-500 rounded-full transition-all"
+                          style={{ width: `${stats.distribution.positive}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                )
+
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center">
+                      <Meh className="w-5 h-5 text-yellow-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-600">
+                          Neutral
+                        </span>
+                        <span className="text-sm font-medium text-yellow-600">
+                          {stats.neutral}
+                        </span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full">
+                        <div
+                          className="h-full bg-yellow-500 rounded-full transition-all"
+                          style={{ width: `${stats.distribution.neutral}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
+                      <Frown className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-600">
+                          Negative
+                        </span>
+                        <span className="text-sm font-medium text-red-600">
+                          {stats.negative}
+                        </span>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full">
+                        <div
+                          className="h-full bg-red-500 rounded-full transition-all"
+                          style={{ width: `${stats.distribution.negative}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {postUrl && (
+                <div className="bg-white rounded-xl p-4 w-full flex justify-center items-center flex-col">
+                  <h3 className="font-semibold text-gray-900 mb-4">
+                    Original Post
+                  </h3>
+                  <div style={{ display: "flex", justifyContent: "center" }}>
+                    <FacebookEmbed
+                      className="border-2  shadow-sm"
+                      url={postUrl}
+                      width={350}
+                    />
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
+            </TabsContent>
 
-          {/* Main Post Analysis */}
-          <div className="bg-white p-4 rounded-xl border">
-            <h3 className="font-semibold text-gray-900 mb-4">Post Analysis</h3>
-            <div className="border rounded-lg p-3">
-              <div className="flex items-start gap-3 mb-2">
-                <div className="flex-shrink-0 mt-1">
-                  {getSentimentIcon(resultsData.results[0].sentiment)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-gray-800">{scrapedData.post.content}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span
-                      className={`text-sm font-medium ${getSentimentColor(
-                        resultsData.results[0].score.positive
-                      )}`}
-                    >
-                      Sentiment Score:{" "}
-                      {Math.round(resultsData.results[0].score.positive * 100)}%
-                    </span>
+            {/* Comments Tab */}
+            <TabsContent value="comments" className="mt-4">
+              <div className="divide-y divide-gray-200">
+                {scrapedData.map((comment, index) => (
+                  <div key={index} className="bg-white px-4 py-3">
+                    <div className="flex gap-3">
+                      <div className="flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                          <span className="text-sm font-medium text-gray-600">
+                            {comment.author.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-1">
+                          <span className="font-medium text-gray-900 text-sm truncate">
+                            {comment.author}
+                          </span>
+                        </div>
+
+                        <p className="text-gray-800 text-sm mt-1">
+                          {comment.comment}
+                        </p>
+
+                        <div className="flex items-center gap-2 mt-2">
+                          {comment.sentiment === "Positive" ? (
+                            <Smile className="w-4 h-4 text-green-500" />
+                          ) : comment.sentiment === "Neutral" ? (
+                            <Meh className="w-4 h-4 text-yellow-500" />
+                          ) : (
+                            <Frown className="w-4 h-4 text-red-500" />
+                          )}
+                          <span
+                            className={`text-sm font-medium ${
+                              comment.sentiment === "Positive"
+                                ? "text-green-600"
+                                : comment.sentiment === "Neutral"
+                                ? "text-yellow-600"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {comment.sentiment}
+                          </span>
+                          <span className="text-gray-400">•</span>
+                          <span className="text-sm text-gray-500">
+                            {Math.round(comment.confidence * 100)}% confidence
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
-            </div>
-          </div>
+            </TabsContent>
+
+            {/* AI Analysis Tab */}
+            <TabsContent value="ai" className="mt-4">
+              {aiInsights ? (
+                <Card>
+                  <CardContent>
+                    <Markdown>{aiInsights}</Markdown>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Skeleton className="w-full h-full" />
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
-      ) : activeTab === "posts" ? (
-        /* Comments Analysis Tab */
-        <div className="space-y-4">
-          {resultsData.results.slice(1).map((result, index) => (
-            <div
-              key={index}
-              className="bg-white p-4 rounded-xl border space-y-3"
-            >
-              <div className="flex items-start gap-3">
-                {getSentimentIcon(result.sentiment)}
-                <div className="flex-1">
-                  <p className="text-gray-800">{result.content}</p>
-                  <div className="mt-2">
-                    <span
-                      className={`text-sm font-medium ${getSentimentColor(
-                        result.score.positive
-                      )}`}
-                    >
-                      Sentiment Score: {Math.round(result.score.positive * 100)}
-                      %
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : activeTab === "AI Insights" ? (
-        /* AI Insights Tab */
-        <div className="space-y-4">
-          {insightLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-            </div>
-          ) : (
-            <div className="bg-white p-4 rounded-xl border">
-              <h3 className="font-semibold text-gray-900 mb-4">AI Insights</h3>
-              <Markdown>{aiInsights!}</Markdown>
-            </div>
-          )}
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 }
