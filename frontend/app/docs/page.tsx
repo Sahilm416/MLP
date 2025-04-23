@@ -14,9 +14,26 @@ export default function Documentation() {
         <section className="mb-12">
           <h2 className="text-xl font-bold mb-4 text-black">Abstract</h2>
           <p className="text-gray-700 leading-relaxed">
-            Sentiment analysis for Marathi is about analyzing the sentiments of internet data present in
-            Marathi language. It delivers the output through an app where people can input the social
-            media profiles and analyze the sentiments of the posts present.
+            Sentiment analysis for Marathi is about analyzing the sentiments of Facebook comments in
+            Marathi language. It delivers the output through an app where users can analyze the sentiments
+            of comments on Facebook posts.
+          </p>
+        </section>
+
+        {/* Research Paper Section */}
+        <section className="mb-12">
+          <h2 className="text-xl font-bold mb-4 text-black">Published Research</h2>
+          <p className="text-gray-700 leading-relaxed">
+            Our research work has been published in a paper titled "Advanced Deep Learning Approaches for Marathi Sentiment Analysis". 
+            You can access the full paper on {' '}
+            <a 
+              href="https://www.researchgate.net/publication/391020544_Advanced_Deep_Learning_Approaches_for_Marathi_Sentiment_Analysis"
+              className="text-blue-600 hover:text-blue-800 underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              ResearchGate
+            </a>.
           </p>
         </section>
 
@@ -35,8 +52,8 @@ export default function Documentation() {
         <section className="mb-12">
           <h2 className="text-xl font-bold mb-4 text-black">Problem Statement</h2>
           <p className="text-gray-700 leading-relaxed">
-            Design And Develop a strong and effective system for Analyzing the sentiment of Marathi
-            Social Media Posts and Tweets.
+            Design and develop a strong and effective system for analyzing the sentiment of Marathi
+            comments on Facebook posts.
           </p>
         </section>
 
