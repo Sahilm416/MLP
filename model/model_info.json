@@ -1,0 +1,9 @@
+{
+    "model_name": "google/muril-base-cased",
+    "num_labels": 3,
+    "class_mapping": {
+        "0": -1,
+        "1": 0,
+        "2": 1
+    }
+} 
