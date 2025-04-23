@@ -116,22 +116,44 @@ export default function Results() {
             {/* Post Stats Tab */}
             <TabsContent value="post" className="mt-4 space-y-4 pb-20">
               {/* Main Sentiment Card */}
-              <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-4 text-white">
+              <div className={`bg-gradient-to-br ${
+                stats.distribution.positive > stats.distribution.negative && stats.distribution.positive >= stats.distribution.neutral
+                  ? 'from-green-500 to-green-600'
+                  : stats.distribution.negative > stats.distribution.positive && stats.distribution.negative >= stats.distribution.neutral
+                  ? 'from-red-500 to-red-600'
+                  : stats.distribution.neutral > stats.distribution.positive && stats.distribution.neutral >= stats.distribution.negative
+                  ? 'from-yellow-500 to-yellow-600'
+                  : 'from-blue-500 to-blue-600'
+              } rounded-xl p-4 text-white`}>
                 <h3 className="text-lg font-semibold mb-2">
-                  Negative Feedback
+                  {stats.distribution.positive > stats.distribution.negative && stats.distribution.positive >= stats.distribution.neutral
+                    ? 'Positive Feedback'
+                    : stats.distribution.negative > stats.distribution.positive && stats.distribution.negative >= stats.distribution.neutral
+                    ? 'Negative Feedback'
+                    : stats.distribution.neutral > stats.distribution.positive && stats.distribution.neutral >= stats.distribution.negative
+                    ? 'Neutral Feedback'
+                    : 'Balanced Feedback'}
                 </h3>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-3xl font-bold mb-1">
-                      {stats.distribution.negative}%
+                      {Math.max(stats.distribution.positive, stats.distribution.negative, stats.distribution.neutral)}%
                     </p>
-                    {/* <p className="text-sm text-blue-100">Negative Feedback</p> */}
                   </div>
                   <div className="h-16 w-16 rounded-full bg-white/10 flex items-center justify-center">
-                    <ThumbsDown className="w-8 h-8 text-white" />
+                    {stats.distribution.positive > stats.distribution.negative && stats.distribution.positive >= stats.distribution.neutral ? (
+                      <ThumbsUp className="w-8 h-8 text-white" />
+                    ) : stats.distribution.negative > stats.distribution.positive && stats.distribution.negative >= stats.distribution.neutral ? (
+                      <ThumbsDown className="w-8 h-8 text-white" />
+                    ) : stats.distribution.neutral > stats.distribution.positive && stats.distribution.neutral >= stats.distribution.negative ? (
+                      <Meh className="w-8 h-8 text-white" />
+                    ) : (
+                      <Scale className="w-8 h-8 text-white" />
+                    )}
                   </div>
                 </div>
               </div>
+              
 
               {/* Stats Grid */}
               <div className="grid grid-cols-2 gap-4">
