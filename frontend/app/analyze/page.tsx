@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAnalyze } from "@/context/AnalyzeProvoder";
 import { toast } from "sonner";
 import { ModalResponse } from "@/types";
+import { getServerURL } from "@/actions";
 
 interface FormData {
   postUrl: string;
@@ -30,15 +31,14 @@ export default function Analyze() {
         throw new Error("Please enter a valid Facebook post URL");
       }
 
+      const serverURL = await getServerURL() + "/analyze-facebook-comments";
+      console.log("serverURL", serverURL);
       // Call the analysis endpoint
-      const response = await fetch(
-        process.env.NEXT_PUBLIC_SENTIMENT_ANALYSIS_ENDPOINT!,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ post_url: formData.postUrl }),
-        }
-      );
+      const response = await fetch(serverURL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_url: formData.postUrl }),
+      });
 
       if (!response.ok) {
         const errorData = await response.json();
